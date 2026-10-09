@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JAWI SLICE – Suku Kata Terbuka</title>
+  
+  <!-- MediaPipe CDN untuk Hand Tracking -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <!-- Google Fonts untuk Tulisan Cantik & Jawi -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Noto+Naskh+Arabic:wght@600;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* ==========================================
+       1. ASAS & SKRIN REKA BENTUK
+       ========================================== */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Fredoka', cursive, sans-serif;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      color: #fff;
+    }
+
+    /* Bekas Utama */
+    #app-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: radial-gradient(circle at center, #1a365d 0%, #0f172a 100%);
+    }
+
+    /* Canvas Permainan Utama */
+    #game-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 5;
+    }
+
+    /* Elemen Lapisan Skrin Overlay (Mula, Game Over, Selesai) */
+    .screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(8px);
+      padding: 20px;
+      text-align: center;
+      transition: opacity 0.3s ease;
+    }
+
+    .hidden {
+      display: none !important;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* ==========================================
+       2. REKA BENTUK SKRIN MULA & INSTRUCTION
+       ========================================== */
+    .title-jawi {
+      font-family: 'Noto Naskh Arabic', serif;
+      font-size: 3.8rem;
+      color: #facc15;
+      text-shadow: 0 0 20px rgba(250, 204, 21, 0.6), 0 4px 8px rgba(0,0,0,0.5);
+      margin-bottom: 5px;
+      direction: rtl;
+    }
+
+    .title-latin {
+      font-size: 2.8rem;
+      font-weight: 700;
+      color: #38bdf8;
+      letter-spacing: 2px;
+      text-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
+      margin-bottom: 5px;
+    }
+
+    .subtitle {
+      font-size: 1.4rem;
+      color: #a7f3d0;
+      margin-bottom: 20px;
+      background: rgba(16, 185, 129, 0.2);
+      padding: 6px 20px;
+      border-radius: 20px;
+      border: 1px solid #10b981;
+    }
+
+    .instruction-card {
+      background: rgba(30, 41, 59, 0.85);
+      border: 2px solid #38bdf8;
+      border-radius: 16px;
+      padding: 20px;
+      max-width: 650px;
+      width: 90%;
+      margin-bottom: 25px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+      text-align: left;
+    }
+
+    .instruction-card h3 {
+      color: #facc15;
+      font-size: 1.3rem;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .instruction-list {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 10px;
+      font-size: 0.95rem;
+      color: #e2e8f0;
+    }
+
+    .instruction-list li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-start {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      font-size: 1.8rem;
+      font-weight: 700;
+      padding: 16px 45px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.6), 0 6px 0 #047857;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-start:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 0 30px rgba(16, 185, 129, 0.8), 0 8px 0 #047857;
+    }
+
+    .btn-start:active {
+      transform: translateY(3px);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.5), 0 2px 0 #047857;
+    }
+
+    .privacy-note {
+      margin-top: 15px;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+
+    /* ==========================================
+       3. HEADS-UP DISPLAY (HUD) PERMAINAN
+       ========================================== */
+    #hud-container {
+      position: absolute;
+      top: 15px;
+      left: 0;
+      width: 100%;
+      padding: 0 25px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .hud-box {
+      background: rgba(15, 23, 42, 0.75);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 14px;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      backdrop-filter: blur(5px);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+
+    .hud-title {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+    }
+
+    .hud-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #facc15;
+    }
+
+    .lives-hearts {
+      font-size: 1.4rem;
+      letter-spacing: 4px;
+    }
+
+    /* Kad Soalan Utama */
+    #question-card {
+      position: absolute;
+      top: 85px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
+      border: 3px solid #38bdf8;
+      border-radius: 20px;
+      padding: 15px 35px;
+      z-index: 10;
+      text-align: center;
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.4);
+      pointer-events: none;
+      max-width: 85%;
+    }
+
+    #question-text {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-top: 4px;
+    }
+
+    #question-number {
+      font-size: 0.9rem;
+      color: #a855f7;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    /* ==========================================
+       4. WEBCAM PANEL & TRACKING OVERLAY
+       ========================================== */
+    #webcam-container {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 220px;
+      height: 165px;
+      border-radius: 16px;
+      border: 3px solid #ec4899;
+      box-shadow: 0 0 20px rgba(236, 72, 153, 0.5), 0 8px 20px rgba(0,0,0,0.5);
+      overflow: hidden;
+      z-index: 15;
+      background: #000;
+    }
+
+    #webcam-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Cermin */
+    }
+
+    .webcam-badge {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      background: rgba(236, 72, 153, 0.85);
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 8px;
+      letter-spacing: 1px;
+    }
+
+    #hand-status {
+      position: absolute;
+      bottom: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      background: rgba(0, 0, 0, 0.75);
+      color: #4ade80;
+      font-size: 0.65rem;
+      text-align: center;
+      padding: 3px 6px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    #hand-status.warning {
+      color: #fbbf24;
+    }
+
+    /* ==========================================
+       5. SKRIN GAME OVER & PERMAINAN SELESAI
+       ========================================== */
+    .result-card {
+      background: rgba(30, 41, 59, 0.9);
+      border: 3px solid #a855f7;
+      border-radius: 20px;
+      padding: 25px 40px;
+      max-width: 500px;
+      width: 90%;
+      margin: 20px 0;
+      box-shadow: 0 0 30px rgba(168, 85, 247, 0.3);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin: 20px 0;
+    }
+
+    .stat-item {
+      background: rgba(15, 23, 42, 0.7);
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .stat-label {
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+
+    .stat-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+
+    .motivational-msg {
+      font-size: 1.25rem;
+      color: #facc15;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+
+    .flash-red {
+      animation: flashRedAnim 0.4s ease-out;
+    }
+
+    @keyframes flashRedAnim {
+      0% { background-color: rgba(239, 68, 68, 0.4); }
+      100% { background-color: transparent; }
+    }
+
+    /* ==========================================
+       6. MESRA RESPONSIF
+       ========================================== */
+    @media (max-width: 768px) {
+      .title-jawi { font-size: 2.8rem; }
+      .title-latin { font-size: 2rem; }
+      #question-text { font-size: 1.1rem; }
+      #webcam-container { width: 150px; height: 112px; bottom: 10px; right: 10px; }
+      .hud-box { padding: 6px 12px; }
+      .hud-value { font-size: 1.1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="app-container">
+    <!-- Red Flash Overlay apabila salah -->
+    <div id="flash-overlay" style="position:absolute; width:100%; height:100%; pointer-events:none; z-index:12;"></div>
+
+    <!-- Canvas Permainan Utama -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD Permainan Utama -->
+    <div id="hud-container" class="hidden">
+      <div class="hud-box">
+        <div>
+          <div class="hud-title">Soalan</div>
+          <div id="hud-question-num" class="hud-value">1/10</div>
+        </div>
+      </div>
+
+      <div class="hud-box">
+        <div>
+          <div class="hud-title">Masa</div>
+          <div id="hud-timer" class="hud-value" style="color: #38bdf8;">02:00</div>
+        </div>
+      </div>
+
+      <div class="hud-box">
+        <div>
+          <div class="hud-title">Skor</div>
+          <div id="hud-score" class="hud-value">0</div>
+        </div>
+      </div>
+
+      <div class="hud-box">
+        <div>
+          <div class="hud-title">Nyawa</div>
+          <div id="hud-lives" class="lives-hearts">❤️ ❤️ ❤️</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kad Soalan -->
+    <div id="question-card" class="hidden">
+      <div id="question-number">SOALAN 1 / 10</div>
+      <div id="question-text">Loading question...</div>
+    </div>
+
+    <!-- WebCam Live Box -->
+    <div id="webcam-container">
+      <video id="webcam-video" autoplay playsinline muted></video>
+      <div class="webcam-badge">📹 CAMERA</div>
+      <div id="hand-status">⚡ Memuatkan Hand Tracking...</div>
+    </div>
+
+    <!-- SKRIN 1: SKRIN MULA -->
+    <div id="screen-start" class="screen">
+      <div class="title-jawi">جَاوِي سْلَايْس</div>
+      <div class="title-latin">JAWI SLICE</div>
+      <div class="subtitle">Suku Kata Terbuka • Tahun 1</div>
+
+      <div class="instruction-card">
+        <h3>🎯 CARA BERMAIN</h3>
+        <ul class="instruction-list">
+          <li>📷 Benarkan akses kamera anda.</li>
+          <li>🖐️ Angkat tangan di hadapan kamera.</li>
+          <li>☝️ Gunakan <b>JARI TELUNJUK</b> sahaja.</li>
+          <li>⚡ Tebas/Slash belon suku kata Jawi yang betul!</li>
+          <li>✅ Jawapan Betul = <b>+10 Markah</b></li>
+          <li>❌ Jawapan Salah = <b>-5 Markah & Hilang 1 Nyawa</b></li>
+          <li>🖱️ (Tetikus/Sentuhan juga boleh digunakan)</li>
+        </ul>
+      </div>
+
+      <button id="btn-start-game" class="btn-start">
+        🚀 MULA BERMAIN
+      </button>
+
+      <div class="privacy-note">
+        🔒 Video kamera hanya diproses secara tempatan dalam pelayar web anda dan tidak disimpan.
+      </div>
+    </div>
+
+    <!-- SKRIN 3: GAME OVER -->
+    <div id="screen-gameover" class="screen hidden">
+      <div style="font-size: 3.5rem; margin-bottom: 10px;">💔</div>
+      <h1 style="color: #ef4444; font-size: 2.5rem;">PERMAINAN TAMAT!</h1>
+      <p style="color: #94a3b8; font-size: 1.1rem;">Masa telah tamat atau nyawa anda telah habis.</p>
+
+      <div class="result-card">
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">Skor Akhir</div>
+            <div id="go-score" class="stat-value">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Jawapan Betul</div>
+            <div id="go-correct" class="stat-value" style="color: #4ade80;">0/10</div>
+          </div>
+        </div>
+        <div id="go-message" class="motivational-msg">Jangan berputus asa! Mari cuba lagi!</div>
+      </div>
+
+      <button class="btn-start btn-restart" style="background: linear-gradient(135deg, #a855f7, #7e22ce); box-shadow: 0 0 20px rgba(168, 85, 247, 0.6), 0 6px 0 #6b21a8;">
+        🔄 MAIN LAGI
+      </button>
+    </div>
+
+    <!-- SKRIN 4: PERMAINAN SELESAI -->
+    <div id="screen-win" class="screen hidden">
+      <div style="font-size: 3.5rem; margin-bottom: 10px;">🌟🏆🌟</div>
+      <h1 style="color: #facc15; font-size: 2.5rem;">TAHNIAH! SELESAI!</h1>
+      <p style="color: #94a3b8; font-size: 1.1rem;">Anda telah menjawab semua 10 soalan suku kata Jawi!</p>
+
+      <div class="result-card" style="border-color: #facc15;">
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">Skor Akhir</div>
+            <div id="win-score" class="stat-value" style="color: #facc15;">100</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Jawapan Betul</div>
+            <div id="win-correct" class="stat-value" style="color: #4ade80;">10/10</div>
+          </div>
+        </div>
+        <div id="win-message" class="motivational-msg">Hebat! Tahniah, anda sangat mahir!</div>
+      </div>
+
+      <button class="btn-start btn-restart" style="background: linear-gradient(135deg, #10b981, #047857);">
+        🔄 MAIN LAGI
+      </button>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================================
+       SECTION 1: BANK SOALAN SUKU KATA TERBUKA TAHOUN 1 (MUDAH DIEDIT GURU)
+       ========================================================================= */
+    const questions = [
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi BA",
+        options: ["با", "تا", "ما"],
+        answer: "با"
+      },
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi TA",
+        options: ["تا", "با", "پا"],
+        answer: "تا"
+      },
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi CA",
+        options: ["چا", "جا", "سا"],
+        answer: "چا"
+      },
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi DA",
+        options: ["دا", "را", "زا"],
+        answer: "دا"
+      },
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi RA",
+        options: ["را", "دا", "وا"],
+        answer: "را"
+      },
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi SA",
+        options: ["سا", "شين", "پا"],
+        answer: "سا"
+      },
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi PA",
+        options: ["پا", "فا", "كا"],
+        answer: "پا"
+      },
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi MA",
+        options: ["ما", "نا", "لا"],
+        answer: "ما"
+      },
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi NA",
+        options: ["نا", "ما", "با"],
+        answer: "نا"
+      },
+      {
+        question: "Pilih suku kata Jawi yang betul bagi bunyi YA",
+        options: ["يا", "تا", "نا"],
+        answer: "يا"
+      }
+    ];
+
+    /* =========================================================================
+       SECTION 2: WEB AUDIO API SYNTHESIZER (TANPA FAIL EXTERNAL AUDIO)
+       ========================================================================= */
+    class SoundSynth {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playClick() {
+        this.init();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(900, this.ctx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.05);
+      }
+
+      playSlash() {
+        this.init();
+        const bufferSize = this.ctx.sampleRate * 0.1;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1000, this.ctx.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(3500, this.ctx.currentTime + 0.08);
+        filter.Q.value = 3;
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.35, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start();
+      }
+
+      playCorrect() {
+        this.init();
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        notes.forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime + idx * 0.06);
+          gain.gain.setValueAtTime(0, this.ctx.currentTime + idx * 0.06);
+          gain.gain.linearRampToValueAtTime(0.3, this.ctx.currentTime + idx * 0.06 + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + idx * 0.06 + 0.25);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(this.ctx.currentTime + idx * 0.06);
+          osc.stop(this.ctx.currentTime + idx * 0.06 + 0.25);
+        });
+      }
+
+      playWrong() {
+        this.init();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(90, this.ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.35, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.25);
+      }
+
+      playWin() {
+        this.init();
+        const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+        notes.forEach((freq, i) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime + i * 0.1);
+          gain.gain.setValueAtTime(0.3, this.ctx.currentTime + i * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + i * 0.1 + 0.4);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(this.ctx.currentTime + i * 0.1);
+          osc.stop(this.ctx.currentTime + i * 0.1 + 0.4);
+        });
+      }
+
+      playGameOver() {
+        this.init();
+        const notes = [300, 260, 220, 180];
+        notes.forEach((freq, i) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime + i * 0.15);
+          gain.gain.setValueAtTime(0.3, this.ctx.currentTime + i * 0.15);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + i * 0.15 + 0.3);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(this.ctx.currentTime + i * 0.15);
+          osc.stop(this.ctx.currentTime + i * 0.15 + 0.3);
+        });
+      }
+    }
+
+    const audio = new SoundSynth();
+
+    /* =========================================================================
+       SECTION 3: LOGIK KEADAAN PERMAINAN & PEMBUATAN OBJEK BUBBLE
+       ========================================================================= */
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+
+    let currentQuestionIndex = 0;
+    let score = 0;
+    let lives = 3;
+    let timeRemaining = 120; // 2 minit = 120 saat
+    let timerInterval = null;
+    let isPlaying = false;
+    let correctCount = 0;
+    let wrongCount = 0;
+
+    // Jejak pergerakan jari (Slash Trail)
+    let fingerTrail = []; // [{x, y, time}]
+    let smoothedFinger = { x: 0, y: 0, detected: false };
+
+    // Objek Pilihan Jawapan (Bubbles)
+    let bubbles = [];
+    let particles = [];
+    let floatingTexts = [];
+
+    // Tetapan Warna Belon Suku Kata
+    const bubbleColors = [
+      { fill: '#38bdf8', border: '#0284c7', glow: 'rgba(56, 189, 248, 0.6)' }, // Cyan
+      { fill: '#facc15', border: '#ca8a04', glow: 'rgba(250, 204, 21, 0.6)' }, // Kuning
+      { fill: '#a855f7', border: '#7e22ce', glow: 'rgba(168, 85, 247, 0.6)' }, // Ungu
+      { fill: '#4ade80', border: '#16a34a', glow: 'rgba(74, 222, 128, 0.6)' }, // Hijau
+      { fill: '#f43f5e', border: '#e11d48', glow: 'rgba(244, 63, 94, 0.6)' }   // Merah Jambu
+    ];
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Kelas Belon Jawapan
+    class Bubble {
+      constructor(text, isCorrect, index) {
+        this.text = text;
+        this.isCorrect = isCorrect;
+        this.radius = Math.min(canvas.width, canvas.height) * 0.085;
+        if (this.radius < 55) this.radius = 55;
+        if (this.radius > 85) this.radius = 85;
+
+        // Kedudukan awal seimbang di skrin
+        const spacing = canvas.width / 4;
+        this.x = spacing * (index + 1);
+        this.y = canvas.height * 0.55 + (Math.random() * 60 - 30);
+
+        // Pergerakan mengapung lembut
+        this.vx = (Math.random() - 0.5) * 1.8;
+        this.vy = (Math.random() - 0.5) * 1.5;
+        this.baseY = this.y;
+        this.floatOffset = Math.random() * Math.PI * 2;
+
+        this.color = bubbleColors[index % bubbleColors.length];
+        this.isSliced = false;
+        this.slicedAngle = 0;
+        this.sliceProgress = 0;
+      }
+
+      update() {
+        if (!this.isSliced) {
+          this.floatOffset += 0.03;
+          this.x += this.vx;
+          this.y += this.vy + Math.sin(this.floatOffset) * 0.8;
+
+          // Batang Sempadan
+          const margin = this.radius + 20;
+          if (this.x < margin || this.x > canvas.width - margin) this.vx *= -1;
+          if (this.y < canvas.height * 0.3 || this.y > canvas.height * 0.8) this.vy *= -1;
+        } else {
+          this.sliceProgress += 0.08;
+        }
+      }
+
+      draw(ctx) {
+        if (!this.isSliced) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+          
+          // Glow Effect
+          ctx.shadowColor = this.color.glow;
+          ctx.shadowBlur = 20;
+          ctx.fillStyle = this.color.fill;
+          ctx.fill();
+
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+
+          // Kilauan Belon (Highlight)
+          ctx.beginPath();
+          ctx.arc(this.x - this.radius * 0.3, this.y - this.radius * 0.3, this.radius * 0.25, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+          ctx.fill();
+
+          // Tulisan Suku Kata Jawi
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `700 ${this.radius * 1.1}px 'Noto Naskh Arabic', serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(this.text, this.x, this.y + 4);
+
+          ctx.restore();
+        } else {
+          // Animasi Objek Pecah Dua apabila ditebas
+          ctx.save();
+          const offset = this.sliceProgress * 40;
+
+          // Separuh Kiri
+          ctx.save();
+          ctx.translate(this.x - offset, this.y);
+          ctx.rotate(-this.sliceProgress * 0.3);
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, Math.PI * 0.5, Math.PI * 1.5);
+          ctx.fillStyle = this.color.fill;
+          ctx.globalAlpha = Math.max(0, 1 - this.sliceProgress);
+          ctx.fill();
+          ctx.restore();
+
+          // Separuh Kanan
+          ctx.save();
+          ctx.translate(this.x + offset, this.y);
+          ctx.rotate(this.sliceProgress * 0.3);
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, Math.PI * 1.5, Math.PI * 0.5);
+          ctx.fillStyle = this.color.fill;
+          ctx.globalAlpha = Math.max(0, 1 - this.sliceProgress);
+          ctx.fill();
+          ctx.restore();
+
+          ctx.restore();
+        }
+      }
+    }
+
+    // Kelas Zarah Kesan Tebasan (Sparkles)
+    class Particle {
+      constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 12;
+        this.vy = (Math.random() - 0.5) * 12;
+        this.radius = Math.random() * 5 + 2;
+        this.color = color;
+        this.alpha = 1;
+        this.decay = Math.random() * 0.04 + 0.02;
+      }
+
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha -= this.decay;
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Teks Animasi Skor terapung (+10 BETUL! / -5 SALAH!)
+    class FloatingText {
+      constructor(x, y, text, color) {
+        this.x = x;
+        this.y = y;
+        this.text = text;
+        this.color = color;
+        this.alpha = 1;
+        this.scale = 0.5;
+      }
+
+      update() {
+        this.y -= 2;
+        if (this.scale < 1.2) this.scale += 0.08;
+        this.alpha -= 0.025;
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.font = `bold ${28 * this.scale}px 'Fredoka', cursive`;
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 8;
+        ctx.textAlign = 'center';
+        ctx.fillText(this.text, this.x, this.y);
+        ctx.restore();
+      }
+    }
+
+    /* =========================================================================
+       SECTION 4: LOGIK PENGESANAN TEBASAN (SLASH COLLISION DETECTION)
+       ========================================================================= */
+    function checkSlashes() {
+      if (fingerTrail.length < 2) return;
+
+      const p1 = fingerTrail[fingerTrail.length - 1]; // Kedudukan terkini
+      const p2 = fingerTrail[fingerTrail.length - 2]; // Kedudukan sebelumnya
+
+      // Kira kelajuan tebasan
+      const dx = p1.x - p2.x;
+      const dy = p1.y - p2.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Keperluan kelajuan minima untuk dikira sebagai "SLASH"
+      if (dist < 12) return;
+
+      bubbles.forEach(bubble => {
+        if (bubble.isSliced) return;
+
+        // Semak jarak garisan tebasan ke pusat belon
+        const distToCenter = distanceToSegment(bubble, p1, p2);
+
+        if (distToCenter < bubble.radius + 15) {
+          // TEBASAN BERJAYA
+          bubble.isSliced = true;
+          createSparkles(bubble.x, bubble.y, bubble.color.fill);
+          audio.playSlash();
+
+          if (bubble.isCorrect) {
+            // JAWAPAN BETUL
+            score += 10;
+            correctCount++;
+            audio.playCorrect();
+            floatingTexts.push(new FloatingText(bubble.x, bubble.y, 'BETUL! +10', '#4ade80'));
+            updateHUD();
+
+            setTimeout(() => {
+              nextQuestion();
+            }, 600);
+          } else {
+            // JAWAPAN SALAH
+            score = Math.max(0, score - 5);
+            lives--;
+            wrongCount++;
+            audio.playWrong();
+            triggerRedFlash();
+            floatingTexts.push(new FloatingText(bubble.x, bubble.y, 'SALAH! -5', '#ef4444'));
+            updateHUD();
+
+            if (lives <= 0) {
+              setTimeout(() => {
+                endGame(false);
+              }, 600);
+            } else {
+              setTimeout(() => {
+                nextQuestion();
+              }, 600);
+            }
+          }
+        }
+      });
+    }
+
+    // Kira Jarak Titik ke Segmen Garisan
+    function distanceToSegment(p, v, w) {
+      const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2;
+      if (l2 === 0) return Math.sqrt((p.x - v.x) ** 2 + (p.y - v.y) ** 2);
+      let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.sqrt((p.x - (v.x + t * (w.x - v.x))) ** 2 + (p.y - (v.y + t * (w.y - v.y))) ** 2);
+    }
+
+    function createSparkles(x, y, color) {
+      for (let i = 0; i < 25; i++) {
+        particles.push(new Particle(x, y, color));
+        particles.push(new Particle(x, y, '#ffffff'));
+      }
+    }
+
+    function triggerRedFlash() {
+      const overlay = document.getElementById('flash-overlay');
+      overlay.classList.add('flash-red');
+      setTimeout(() => {
+        overlay.classList.remove('flash-red');
+      }, 400);
+    }
+
+    /* =========================================================================
+       SECTION 5: PENGURUSAN SOALAN & ALIRAN PERMAINAN
+       ========================================================================= */
+    function loadQuestion() {
+      if (currentQuestionIndex >= questions.length) {
+        endGame(true);
+        return;
+      }
+
+      const qData = questions[currentQuestionIndex];
+      document.getElementById('question-number').innerText = `SOALAN ${currentQuestionIndex + 1} / ${questions.length}`;
+      document.getElementById('hud-question-num').innerText = `${currentQuestionIndex + 1}/${questions.length}`;
+      document.getElementById('question-text').innerText = qData.question;
+
+      // Acak/Shuffle pilihan jawapan
+      let shuffledOptions = qData.options.map(opt => ({
+        text: opt,
+        isCorrect: opt === qData.answer
+      }));
+
+      for (let i = shuffledOptions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledOptions[i], shuffledOptions[j]] = [shuffledOptions[j], shuffledOptions[i]];
+      }
+
+      // Cipta belon
+      bubbles = shuffledOptions.map((opt, idx) => new Bubble(opt.text, opt.isCorrect, idx));
+    }
+
+    function nextQuestion() {
+      currentQuestionIndex++;
+      loadQuestion();
+    }
+
+    function updateHUD() {
+      document.getElementById('hud-score').innerText = score;
+      
+      let heartsStr = '';
+      for (let i = 0; i < 3; i++) {
+        heartsStr += (i < lives) ? '❤️ ' : '🖤 ';
+      }
+      document.getElementById('hud-lives').innerText = heartsStr;
+    }
+
+    function startTimer() {
+      timeRemaining = 120;
+      updateTimerDisplay();
+
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (!isPlaying) return;
+        timeRemaining--;
+        updateTimerDisplay();
+
+        if (timeRemaining <= 0) {
+          clearInterval(timerInterval);
+          endGame(false);
+        }
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      const mins = Math.floor(timeRemaining / 60);
+      const secs = timeRemaining % 60;
+      document.getElementById('hud-timer').innerText = 
+        `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function startGame() {
+      audio.playClick();
+      isPlaying = true;
+      score = 0;
+      lives = 3;
+      currentQuestionIndex = 0;
+      correctCount = 0;
+      wrongCount = 0;
+
+      updateHUD();
+      loadQuestion();
+      startTimer();
+
+      document.getElementById('screen-start').classList.add('hidden');
+      document.getElementById('screen-gameover').classList.add('hidden');
+      document.getElementById('screen-win').classList.add('hidden');
+      
+      document.getElementById('hud-container').classList.remove('hidden');
+      document.getElementById('question-card').classList.remove('hidden');
+    }
+
+    function endGame(isWin) {
+      isPlaying = false;
+      if (timerInterval) clearInterval(timerInterval);
+
+      document.getElementById('hud-container').classList.add('hidden');
+      document.getElementById('question-card').classList.add('hidden');
+
+      if (isWin) {
+        audio.playWin();
+        document.getElementById('win-score').innerText = score;
+        document.getElementById('win-correct').innerText = `${correctCount}/${questions.length}`;
+
+        let msg = "Syabas! Teruskan berlatih!";
+        if (score >= 80) msg = "Hebat! Tahniah, anda sangat mahir!";
+        else if (score >= 60) msg = "Bagus! Teruskan usaha!";
+        document.getElementById('win-message').innerText = msg;
+
+        document.getElementById('screen-win').classList.remove('hidden');
+      } else {
+        audio.playGameOver();
+        document.getElementById('go-score').innerText = score;
+        document.getElementById('go-correct').innerText = `${correctCount}/${questions.length}`;
+
+        let msg = "Jangan berputus asa! Mari cuba lagi!";
+        if (score >= 50) msg = "Hampir berjaya! Cuba sekali lagi!";
+        document.getElementById('go-message').innerText = msg;
+
+        document.getElementById('screen-gameover').classList.remove('hidden');
+      }
+    }
+
+    /* =========================================================================
+       SECTION 6: MEDIA PIPE HAND TRACKING & INPUT HANDLER
+       ========================================================================= */
+    const videoElement = document.getElementById('webcam-video');
+    const handStatusEl = document.getElementById('hand-status');
+
+    function onResults(results) {
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        handStatusEl.innerText = "🖐️ Jari Dikesan";
+        handStatusEl.classList.remove('warning');
+
+        const landmarks = results.multiHandLandmarks[0];
+        // Landmark 8 ialah Hujung Jari Telunjuk (INDEX_FINGER_TIP)
+        const indexTip = landmarks[8];
+
+        // Petakan koordinat (Cermin secara mendatar X)
+        const rawX = (1 - indexTip.x) * canvas.width;
+        const rawY = indexTip.y * canvas.height;
+
+        // Smoothing koordinat (Lerp)
+        if (!smoothedFinger.detected) {
+          smoothedFinger.x = rawX;
+          smoothedFinger.y = rawY;
+          smoothedFinger.detected = true;
+        } else {
+          smoothedFinger.x += (rawX - smoothedFinger.x) * 0.45;
+          smoothedFinger.y += (rawY - smoothedFinger.y) * 0.45;
+        }
+
+        addFingerPoint(smoothedFinger.x, smoothedFinger.y);
+      } else {
+        smoothedFinger.detected = false;
+        handStatusEl.innerText = "⚠️ Tangan Tidak Dikesan";
+        handStatusEl.classList.add('warning');
+      }
+    }
+
+    function addFingerPoint(x, y) {
+      const now = Date.now();
+      fingerTrail.push({ x, y, time: now });
+
+      // Kekalkan jejak maksima 12 titik terakhir atau 250ms
+      fingerTrail = fingerTrail.filter(p => now - p.time < 250);
+
+      if (isPlaying) {
+        checkSlashes();
+      }
+    }
+
+    // Sokongan Tetikus & Sentuhan (Mouse / Touch Fallback)
+    let isMouseDown = false;
+    window.addEventListener('mousedown', (e) => {
+      isMouseDown = true;
+      addFingerPoint(e.clientX, e.clientY);
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (isMouseDown) {
+        addFingerPoint(e.clientX, e.clientY);
+      }
+    });
+    window.addEventListener('mouseup', () => { isMouseDown = false; });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length > 0) {
+        const touch = e.touches[0];
+        addFingerPoint(touch.clientX, touch.clientY);
+      }
+    });
+
+    // Inisialisasi MediaPipe Hands
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.55,
+      minTrackingConfidence: 0.55
+    });
+
+    hands.onResults(onResults);
+
+    // Inisialisasi Kamera Webcam
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({ image: videoElement });
+      },
+      width: 640,
+      height: 480
+    });
+
+    camera.start().catch(err => {
+      console.warn("Kamera tidak dapat diakses:", err);
+      handStatusEl.innerText = "⚠️ Kamera Tidak Ditemui (Guna Tetikus)";
+      handStatusEl.classList.add('warning');
+    });
+
+    /* =========================================================================
+       SECTION 7: GELUNG LUKISAN CANVAS (GAME LOOP)
+       ========================================================================= */
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 1. Lukis Belon Jawapan
+      if (isPlaying) {
+        bubbles.forEach(b => {
+          b.update();
+          b.draw(ctx);
+        });
+        bubbles = bubbles.filter(b => !b.isSliced || b.sliceProgress < 1);
+      }
+
+      // 2. Lukis Zarah Sparkling Slash Effect
+      particles.forEach(p => {
+        p.update();
+        p.draw(ctx);
+      });
+      particles = particles.filter(p => p.alpha > 0);
+
+      // 3. Lukis Jalur Cahaya Neon Slash Trail
+      if (fingerTrail.length > 1) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(fingerTrail[0].x, fingerTrail[0].y);
+
+        for (let i = 1; i < fingerTrail.length; i++) {
+          const xc = (fingerTrail[i].x + fingerTrail[i - 1].x) / 2;
+          const yc = (fingerTrail[i].y + fingerTrail[i - 1].y) / 2;
+          ctx.quadraticCurveTo(fingerTrail[i - 1].x, fingerTrail[i - 1].y, xc, yc);
+        }
+
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 10;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 20;
+        ctx.stroke();
+
+        // Lapisan Dalam Kuning Neon
+        ctx.beginPath();
+        ctx.moveTo(fingerTrail[0].x, fingerTrail[0].y);
+        for (let i = 1; i < fingerTrail.length; i++) {
+          ctx.lineTo(fingerTrail[i].x, fingerTrail[i].y);
+        }
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 4. Lukis Titik Cursor Neon di Hujung Jari
+      if (fingerTrail.length > 0) {
+        const tip = fingerTrail[fingerTrail.length - 1];
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, 12, 0, Math.PI * 2);
+        ctx.fillStyle = '#facc15';
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 15;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // 5. Lukis Teks Maklum Balas Skor Terapung
+      floatingTexts.forEach(ft => {
+        ft.update();
+        ft.draw(ctx);
+      });
+      floatingTexts = floatingTexts.filter(ft => ft.alpha > 0);
+
+      requestAnimationFrame(render);
+    }
+
+    render();
+
+    /* =========================================================================
+       SECTION 8: ACARA BUTANG
+       ========================================================================= */
+    document.getElementById('btn-start-game').addEventListener('click', startGame);
+
+    document.querySelectorAll('.btn-restart').forEach(btn => {
+      btn.addEventListener('click', startGame);
+    });
+  </script>
+</body>
+</html>
